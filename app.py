@@ -45,6 +45,9 @@ TASK_ICONS = [
     "🎯","🎨","🏋️","🚴","🍶","📡","🪜","🧽","🥦","🍎",
 ]
 
+# Points per minute - used to calculate bonus points for duration
+POINTS_PER_MINUTE = 0.5
+
 AVATAR_SKINS = ["#FFDBAC","#F1C27D","#E8BEAC","#C68642","#8D5524","#4A2912"]
 AVATAR_HAIRS = ["#2C1810","#8B4513","#DAA520","#FF6B35","#DC143C","#4B0082","#1a1a2e","#FF69B4","#00CED1","#A0A0A0"]
 AVATAR_TOPS  = ["#7c6ff7","#34d399","#f472b6","#fbbf24","#60a5fa","#f87171","#a78bfa","#fb923c"]
@@ -52,9 +55,9 @@ AVATAR_TOPS  = ["#7c6ff7","#34d399","#f472b6","#fbbf24","#60a5fa","#f87171","#a7
 FREQUENCY_OPTIONS = [
     {"value": "once",      "label": "Once"},
     {"value": "daily",     "label": "Every day"},
-    {"value": "weekdays",  "label": "Weekdays only"},
+    {"value": "weekdays",  "label": "Weekdays (Mon-Fri)"},
     {"value": "2x_week",   "label": "Twice a week"},
-    {"value": "3x_week",   "label": "Three times a week"},
+    {"value": "3x_week",   "label": "3× a week"},
     {"value": "weekly",    "label": "Once a week"},
     {"value": "biweekly",  "label": "Every 2 weeks"},
     {"value": "monthly",   "label": "Once a month"},
@@ -76,21 +79,23 @@ def migrate_db(conn):
     c = conn.cursor()
     existing = [row[1] for row in c.execute("PRAGMA table_info(tasks)").fetchall()]
     for col, sql in [
-        ("icon",         "ALTER TABLE tasks ADD COLUMN icon TEXT DEFAULT '⭐'"),
-        ("done_together","ALTER TABLE tasks ADD COLUMN done_together INTEGER DEFAULT 0"),
-        ("frequency",    "ALTER TABLE tasks ADD COLUMN frequency TEXT DEFAULT 'once'"),
+        ("icon",          "ALTER TABLE tasks ADD COLUMN icon TEXT DEFAULT '⭐'"),
+        ("done_together", "ALTER TABLE tasks ADD COLUMN done_together INTEGER DEFAULT 0"),
+        ("frequency",     "ALTER TABLE tasks ADD COLUMN frequency TEXT DEFAULT 'once'"),
+        ("duration_mins", "ALTER TABLE tasks ADD COLUMN duration_mins INTEGER DEFAULT 0"),
+        ("actual_mins",   "ALTER TABLE tasks ADD COLUMN actual_mins INTEGER DEFAULT 0"),
     ]:
-        if col not in existing:
-            c.execute(sql)
+        if col not in existing: c.execute(sql)
+
     u_existing = [row[1] for row in c.execute("PRAGMA table_info(users)").fetchall()]
     for col, sql in [
         ("avatar_skin",        "ALTER TABLE users ADD COLUMN avatar_skin INTEGER DEFAULT 0"),
         ("avatar_hair",        "ALTER TABLE users ADD COLUMN avatar_hair INTEGER DEFAULT 0"),
+        ("avatar_hair_long",   "ALTER TABLE users ADD COLUMN avatar_hair_long INTEGER DEFAULT 0"),
         ("avatar_top",         "ALTER TABLE users ADD COLUMN avatar_top INTEGER DEFAULT 0"),
         ("hidden_suggestions", "ALTER TABLE users ADD COLUMN hidden_suggestions TEXT DEFAULT ''"),
     ]:
-        if col not in u_existing:
-            c.execute(sql)
+        if col not in u_existing: c.execute(sql)
     conn.commit()
 
 def init_db():
@@ -98,13 +103,10 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        household_id TEXT,
-        points INTEGER DEFAULT 0,
-        avatar_skin INTEGER DEFAULT 0,
-        avatar_hair INTEGER DEFAULT 0,
-        avatar_top INTEGER DEFAULT 0,
+        username TEXT UNIQUE NOT NULL, password TEXT NOT NULL,
+        household_id TEXT, points INTEGER DEFAULT 0,
+        avatar_skin INTEGER DEFAULT 0, avatar_hair INTEGER DEFAULT 0,
+        avatar_hair_long INTEGER DEFAULT 0, avatar_top INTEGER DEFAULT 0,
         hidden_suggestions TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
@@ -115,12 +117,15 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         household_id TEXT NOT NULL, title TEXT NOT NULL,
-        icon TEXT DEFAULT '⭐', description TEXT, points INTEGER DEFAULT 10,
+        icon TEXT DEFAULT '⭐', description TEXT,
+        points INTEGER DEFAULT 10, duration_mins INTEGER DEFAULT 0,
+        actual_mins INTEGER DEFAULT 0,
         task_type TEXT DEFAULT 'spontaneous', day_of_week TEXT,
         frequency TEXT DEFAULT 'once', assigned_to INTEGER,
         created_by INTEGER NOT NULL, completed_by INTEGER,
         completed_at TIMESTAMP, done_together INTEGER DEFAULT 0,
-        status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        status TEXT DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS rewards (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -159,7 +164,8 @@ def init_db():
 
 with app.app_context():
     init_db()
-app.jinja_env.globals["enumerate"] = enumerate
+
+app.jinja_env.globals['enumerate'] = enumerate
 
 def hash_password(p): return hashlib.sha256(p.encode()).hexdigest()
 
@@ -189,6 +195,57 @@ def get_hidden_suggestions(user):
         h = user['hidden_suggestions'] or ''
         return set(h.split(',')) if h else set()
     except: return set()
+
+def calculate_points_for_duration(base_points, duration_mins):
+    """Calculate points based on duration. Longer tasks = more points."""
+    if not duration_mins or duration_mins <= 0:
+        return base_points
+    # Base: 10 min = base_points. Scale up/down from there.
+    # Every extra 10 min adds ~25% more points, capped at 3x
+    multiplier = min(3.0, max(0.5, duration_mins / 20.0))
+    return max(1, int(base_points * multiplier))
+
+def should_task_appear_today(task, today_date):
+    """Check if a planned task should appear today based on frequency."""
+    freq = task['frequency'] or 'once'
+    dow = task['day_of_week']
+    today_name = today_date.strftime('%A')
+    today_weekday = today_date.weekday()  # 0=Mon, 6=Sun
+
+    if freq == 'once':
+        return dow == today_name
+    elif freq == 'daily':
+        return True
+    elif freq == 'weekdays':
+        return today_weekday < 5  # Mon-Fri
+    elif freq == 'weekly':
+        return dow == today_name
+    elif freq == '2x_week':
+        # Appears on the assigned day AND 3 days later
+        if not dow: return False
+        assigned_idx = DAYS.index(dow) if dow in DAYS else 0
+        second_idx = (assigned_idx + 3) % 7
+        return today_weekday in [assigned_idx, second_idx]
+    elif freq == '3x_week':
+        # Appears Mon/Wed/Fri if no specific day
+        if not dow: return today_weekday in [0, 2, 4]
+        assigned_idx = DAYS.index(dow) if dow in DAYS else 0
+        second_idx = (assigned_idx + 2) % 7
+        third_idx = (assigned_idx + 4) % 7
+        return today_weekday in [assigned_idx, second_idx, third_idx]
+    elif freq == 'biweekly':
+        # Every 2 weeks from task creation
+        if not dow or dow != today_name: return False
+        try:
+            created = datetime.strptime(task['created_at'][:10], '%Y-%m-%d').date()
+            weeks_since = (today_date - created).days // 7
+            return weeks_since % 2 == 0
+        except: return True
+    elif freq == 'monthly':
+        # Once a month - on the assigned day in week 1
+        if not dow or dow != today_name: return False
+        return today_date.day <= 7  # First occurrence of that weekday in month
+    return dow == today_name
 
 def check_monthly_bonus(hid):
     now = datetime.now()
@@ -255,9 +312,9 @@ def avatar():
     user = get_current_user()
     if request.method == 'POST':
         conn = get_db()
-        conn.execute('UPDATE users SET avatar_skin=?,avatar_hair=?,avatar_top=? WHERE id=?',
+        conn.execute('UPDATE users SET avatar_skin=?,avatar_hair=?,avatar_hair_long=?,avatar_top=? WHERE id=?',
             (int(request.form.get('skin',0)), int(request.form.get('hair',0)),
-             int(request.form.get('top',0)), user['id']))
+             int(request.form.get('hair_long',0)), int(request.form.get('top',0)), user['id']))
         conn.commit(); conn.close()
         flash('Avatar updated! ✨','success')
         return redirect(url_for('dashboard'))
@@ -284,8 +341,7 @@ def household_setup():
             if h:
                 conn.execute('UPDATE users SET household_id=? WHERE id=?',(hid,user['id']))
                 conn.commit(); conn.close()
-                flash(f'Joined {h["name"]}!','success')
-                return redirect(url_for('dashboard'))
+                flash(f'Joined {h["name"]}!','success'); return redirect(url_for('dashboard'))
             conn.close(); flash('Code not found.','error')
     return render_template('household.html', user=user)
 
@@ -299,15 +355,24 @@ def dashboard():
     conn = get_db()
     household = conn.execute('SELECT * FROM households WHERE id=?',(user['household_id'],)).fetchone()
     members = get_household_members(user['household_id'])
-    today = date.today().strftime('%A')
-    today_tasks = conn.execute('''SELECT * FROM tasks WHERE household_id=? AND status="pending"
-        AND (day_of_week=? OR task_type="spontaneous")
-        ORDER BY task_type DESC, created_at DESC LIMIT 10''',(user['household_id'],today)).fetchall()
+    today = date.today()
+    today_name = today.strftime('%A')
+
+    # Get all planned tasks and filter by frequency
+    all_planned = conn.execute('SELECT * FROM tasks WHERE household_id=? AND task_type="planned" AND status="pending"',
+        (user['household_id'],)).fetchall()
+    today_planned = [t for t in all_planned if should_task_appear_today(t, today)]
+
+    spontaneous = conn.execute('SELECT * FROM tasks WHERE household_id=? AND task_type="spontaneous" AND status="pending" ORDER BY created_at DESC LIMIT 5',
+        (user['household_id'],)).fetchall()
+    today_tasks = list(today_planned) + list(spontaneous)
+
     week_tasks = conn.execute('''SELECT * FROM tasks WHERE household_id=? AND status="pending"
         AND task_type="planned" ORDER BY
         CASE day_of_week WHEN "Monday" THEN 1 WHEN "Tuesday" THEN 2 WHEN "Wednesday" THEN 3
         WHEN "Thursday" THEN 4 WHEN "Friday" THEN 5 WHEN "Saturday" THEN 6 WHEN "Sunday" THEN 7 END''',
         (user['household_id'],)).fetchall()
+
     month_str = datetime.now().strftime('%Y-%m')
     monthly_stats = []
     for m in members:
@@ -322,7 +387,7 @@ def dashboard():
     conn.close()
     return render_template('dashboard.html', user=user, household=household, members=members,
         today_tasks=today_tasks, week_tasks=week_tasks, monthly_stats=monthly_stats,
-        last_bonus=last_bonus, today=today)
+        last_bonus=last_bonus, today=today_name)
 
 # ── Tasks ─────────────────────────────────────────────────────
 @app.route('/tasks')
@@ -343,10 +408,12 @@ def tasks():
     visible_suggested = [s for s in SUGGESTED_TASKS if s['id'] not in hidden]
     today = date.today()
     return render_template('tasks.html', user=user, planned=planned, spontaneous=spontaneous,
-        days=DAYS, members=members, suggested=visible_suggested, all_suggested_count=len(SUGGESTED_TASKS),
+        days=DAYS, members=members, suggested=visible_suggested,
+        all_suggested_count=len(SUGGESTED_TASKS),
         icons=TASK_ICONS, now=datetime.now(), view=view, frequencies=FREQUENCY_OPTIONS,
         today=today, current_month=today.strftime('%B %Y'),
-        month_days=calendar.monthcalendar(today.year, today.month))
+        month_days=calendar.monthcalendar(today.year, today.month),
+        points_per_minute=POINTS_PER_MINUTE)
 
 @app.route('/tasks/hide-suggested', methods=['POST'])
 @login_required
@@ -373,16 +440,19 @@ def reset_suggested():
 def add_task():
     user = get_current_user()
     task_type = request.form.get('task_type','spontaneous')
+    duration_mins = int(request.form.get('duration_mins', 0) or 0)
+    base_points = int(request.form.get('points', 10))
+    final_points = calculate_points_for_duration(base_points, duration_mins)
     conn = get_db()
-    conn.execute('''INSERT INTO tasks (household_id,title,icon,description,points,task_type,
-        day_of_week,frequency,assigned_to,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)''',
+    conn.execute('''INSERT INTO tasks (household_id,title,icon,description,points,duration_mins,
+        task_type,day_of_week,frequency,assigned_to,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
         (user['household_id'], request.form['title'].strip(),
          request.form.get('icon','⭐'), request.form.get('description','').strip(),
-         int(request.form.get('points',10)), task_type,
+         final_points, duration_mins, task_type,
          request.form.get('day_of_week') if task_type=='planned' else None,
          request.form.get('frequency','once'), request.form.get('assigned_to') or None, user['id']))
     conn.commit(); conn.close()
-    flash(f'{request.form.get("icon","⭐")} "{request.form["title"]}" added!','success')
+    flash(f'{request.form.get("icon","⭐")} "{request.form["title"]}" added! (+{final_points} pts)','success')
     return redirect(url_for('tasks'))
 
 @app.route('/tasks/add-suggested', methods=['POST'])
@@ -390,15 +460,18 @@ def add_task():
 def add_suggested_task():
     user = get_current_user()
     task_type = request.form.get('task_type','spontaneous')
+    duration_mins = int(request.form.get('duration_mins', 0) or 0)
+    base_points = int(request.form.get('points', 10))
+    final_points = calculate_points_for_duration(base_points, duration_mins)
     conn = get_db()
-    conn.execute('''INSERT INTO tasks (household_id,title,icon,points,task_type,day_of_week,frequency,created_by)
-        VALUES (?,?,?,?,?,?,?,?)''',
+    conn.execute('''INSERT INTO tasks (household_id,title,icon,points,duration_mins,task_type,day_of_week,frequency,created_by)
+        VALUES (?,?,?,?,?,?,?,?,?)''',
         (user['household_id'], request.form['title'], request.form.get('icon','⭐'),
-         int(request.form.get('points',10)), task_type,
+         final_points, duration_mins, task_type,
          request.form.get('day_of_week') if task_type=='planned' else None,
          request.form.get('frequency','once'), user['id']))
     conn.commit(); conn.close()
-    flash(f'{request.form.get("icon","⭐")} "{request.form["title"]}" added!','success')
+    flash(f'{request.form.get("icon","⭐")} "{request.form["title"]}" added! (+{final_points} pts)','success')
     return redirect(url_for('tasks'))
 
 @app.route('/tasks/complete/<int:task_id>', methods=['POST'])
@@ -406,17 +479,33 @@ def add_suggested_task():
 def complete_task(task_id):
     user = get_current_user()
     together = request.form.get('together') == 'yes'
+    actual_mins = int(request.form.get('actual_mins', 0) or 0)
     conn = get_db()
     task = conn.execute('SELECT * FROM tasks WHERE id=? AND household_id=?',(task_id,user['household_id'])).fetchone()
     if task and task['status']=='pending':
-        pts = task['points'] * 2 if together else task['points']
-        conn.execute('UPDATE tasks SET status="done",completed_by=?,completed_at=?,done_together=? WHERE id=?',
-                     (user['id'],datetime.now(),1 if together else 0,task_id))
+        # Recalculate points if actual duration provided
+        base_pts = task['points']
+        if actual_mins > 0:
+            # Get original base (reverse-engineer or use stored duration as reference)
+            stored_duration = task['duration_mins'] or 20
+            base_pts = calculate_points_for_duration(task['points'], actual_mins)
+
+        pts = base_pts * 2 if together else base_pts
+
+        conn.execute('''UPDATE tasks SET status="done",completed_by=?,completed_at=?,
+            done_together=?,actual_mins=? WHERE id=?''',
+            (user['id'],datetime.now(),1 if together else 0, actual_mins, task_id))
+        # Give points to the person who clicked
         conn.execute('UPDATE users SET points=points+? WHERE id=?',(pts,user['id']))
+
         if together:
-            for o in conn.execute('SELECT * FROM users WHERE household_id=? AND id!=?',(user['household_id'],user['id'])).fetchall():
+            # FIX: Give points to ALL other household members too
+            others = conn.execute('SELECT * FROM users WHERE household_id=? AND id!=?',
+                                  (user['household_id'],user['id'])).fetchall()
+            for o in others:
                 conn.execute('UPDATE users SET points=points+? WHERE id=?',(pts,o['id']))
-            flash(f'Together! Everyone got +{pts} pts! 🎉','success')
+            members_str = ' & '.join([o['username'] for o in others]) if others else 'everyone'
+            flash(f'Together with {members_str}! Everyone got +{pts} pts! 🎉','success')
         else:
             flash(f'+{pts} pts! ⭐','success')
         conn.commit()

@@ -4,49 +4,52 @@
 <div class="page-header">
   <div>
     <h1>✅ Tasks</h1>
-    <p class="subtitle">Plan and track your chores</p>
+    <p class="subtitle">Plan and track chores</p>
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap">
-    <a href="{{ url_for('wheel') }}" class="btn btn-together">🎡 Spin wheel</a>
-    <button class="btn btn-primary" onclick="toggleModal('add-task-modal')">+ Add task</button>
+    <a href="{{ url_for('wheel') }}" class="btn btn-together btn-sm">🎡 Wheel</a>
+    <button class="btn btn-primary btn-sm" onclick="toggleModal('add-task-modal')">+ Add</button>
   </div>
 </div>
 
-<!-- Suggested tasks with delete button -->
+<!-- Suggested tasks - COLLAPSIBLE -->
 <div class="panel">
-  <div class="panel-title" style="justify-content:space-between">
-    <span>💡 Suggested tasks</span>
-    {% if suggested|length < all_suggested_count %}
-    <form method="POST" action="{{ url_for('reset_suggested') }}" style="display:inline">
-      <button class="btn btn-secondary btn-sm">↺ Reset</button>
-    </form>
-    {% endif %}
-  </div>
-  {% if suggested %}
-  <div class="suggested-grid">
-    {% for s in suggested %}
-    <div class="suggested-card-wrap" style="position:relative">
-      <div class="suggested-card" onclick="openSuggested('{{ s.title }}','{{ s.icon }}','{{ s.points }}')">
-        <span class="suggested-icon">{{ s.icon }}</span>
-        <span class="suggested-title">{{ s.title }}</span>
-        <span class="suggested-pts">+{{ s.points }} pts</span>
-        <span class="suggested-desc">{{ s.desc }}</span>
+  <button class="suggested-toggle" onclick="toggleSuggested(this)" id="sug-toggle">
+    <span>💡 Suggested tasks ({{ suggested|length }})</span>
+    <span class="arrow">▼</span>
+  </button>
+  <div class="suggested-body" id="suggested-body">
+    <div class="suggested-grid">
+      {% for s in suggested %}
+      <div class="suggested-card-wrap">
+        <div class="suggested-card" onclick="openSuggested('{{ s.title }}','{{ s.icon }}','{{ s.points }}')">
+          <span class="sug-icon">{{ s.icon }}</span>
+          <span class="sug-title">{{ s.title }}</span>
+          <span class="sug-pts">+{{ s.points }} pts</span>
+          <span class="sug-desc">{{ s.desc }}</span>
+        </div>
+        <form method="POST" action="{{ url_for('hide_suggested') }}" style="display:inline">
+          <input type="hidden" name="sug_id" value="{{ s.id }}">
+          <button type="submit" class="sug-x" onclick="event.stopPropagation()">✕</button>
+        </form>
       </div>
-      <form method="POST" action="{{ url_for('hide_suggested') }}" style="position:absolute;top:4px;right:4px">
-        <input type="hidden" name="sug_id" value="{{ s.id }}">
-        <button type="submit" class="suggested-hide-btn" title="Hide this suggestion" onclick="event.stopPropagation()">✕</button>
+      {% endfor %}
+    </div>
+    {% if suggested|length < all_suggested_count %}
+    <div style="margin-top:.75rem;text-align:right">
+      <form method="POST" action="{{ url_for('reset_suggested') }}" style="display:inline">
+        <button class="btn btn-secondary btn-sm">↺ Reset hidden</button>
       </form>
     </div>
-    {% endfor %}
+    {% endif %}
   </div>
-  {% else %}
-  <p class="empty-state">All suggestions hidden. <form method="POST" action="{{ url_for('reset_suggested') }}" style="display:inline"><button class="btn btn-secondary btn-sm">↺ Reset</button></form></p>
-  {% endif %}
 </div>
 
 <!-- Planned tasks -->
 <div class="panel">
-  <div class="panel-title">📅 Planned schedule</div>
+  <div class="panel-title">
+    <span>📅 Planned schedule</span>
+  </div>
   <div class="view-tabs">
     <a href="{{ url_for('tasks', view='week') }}" class="view-tab {% if view=='week' %}active{% endif %}">📅 Week</a>
     <a href="{{ url_for('tasks', view='month') }}" class="view-tab {% if view=='month' %}active{% endif %}">🗓️ Month</a>
@@ -57,15 +60,20 @@
     {% for day in days %}
     {% set is_today = day == now.strftime('%A') %}
     <div class="day-col {% if is_today %}day-today{% endif %}">
-      <div class="day-header">{{ day[:3].upper() }}{% if is_today %}<br><span style="font-size:0.4rem">TODAY</span>{% endif %}</div>
+      <div class="day-header">
+        {{ day[:3].upper() }}
+        {% if is_today %}<br>▼{% endif %}
+      </div>
       {% if planned[day] %}
         {% for task in planned[day] %}
         <div class="day-task">
           <span class="day-task-icon">{{ task.icon if task.icon else '⭐' }}</span>
           <div class="day-task-title">{{ task.title }}</div>
-          {% if task.frequency and task.frequency != 'once' %}<div class="day-task-freq">{{ task.frequency|replace('_',' ') }}</div>{% endif %}
-          <div class="day-task-pts">+{{ task.points }}pts</div>
-          <div style="display:flex;gap:3px;margin-top:5px;flex-wrap:wrap">
+          {% if task.frequency and task.frequency != 'once' %}
+          <div class="day-task-freq">{{ task.frequency|replace('_',' ') }}</div>
+          {% endif %}
+          <div class="day-task-pts">+{{ task.points }}p</div>
+          <div class="day-task-btns">
             <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" style="display:inline">
               <button class="btn-done" name="together" value="no">✓</button>
               <button class="btn-done together" name="together" value="yes">✓✓</button>
@@ -82,11 +90,15 @@
     </div>
     {% endfor %}
   </div>
+
   {% else %}
-  <div style="text-align:center;margin-bottom:1rem"><h3 style="font-size:0.75rem">{{ current_month }}</h3></div>
+  <!-- Month view -->
+  <div style="text-align:center;margin-bottom:.75rem">
+    <span style="font-family:'Press Start 2P',monospace;font-size:.6rem">{{ current_month }}</span>
+  </div>
   <div class="month-grid">
-    {% for day_name in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
-    <div class="month-day-header">{{ day_name }}</div>
+    {% for dn in ['M','T','W','T','F','S','S'] %}
+    <div class="month-day-header">{{ dn }}</div>
     {% endfor %}
     {% for week in month_days %}
       {% for day_num in week %}
@@ -95,7 +107,7 @@
         <div class="month-day-num">{{ day_num }}</div>
         {% set day_name = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][loop.index0] %}
         {% for task in planned[day_name] %}
-        <span class="month-task-dot">{{ task.icon if task.icon else '⭐' }} {{ task.title }}</span>
+        <span class="month-task-dot">{{ task.icon if task.icon else '⭐' }} {{ task.title[:8] }}</span>
         {% endfor %}
         {% endif %}
       </div>
@@ -115,11 +127,11 @@
         <div class="task-card-header">
           <span class="task-card-icon">{{ task.icon if task.icon else '⭐' }}</span>
           <span class="task-card-title">{{ task.title }}</span>
-          <span class="badge badge-points">+{{ task.points }} pts</span>
+          <span class="badge badge-points">+{{ task.points }}</span>
         </div>
+        {% if task.duration_mins %}<p class="task-card-desc">⏱ ~{{ task.duration_mins }} min</p>{% endif %}
         {% if task.description %}<p class="task-card-desc">{{ task.description }}</p>{% endif %}
         <div class="task-card-footer">
-          <span class="task-meta" style="font-size:0.85rem;color:var(--text2)">Added by you</span>
           <div class="task-actions">
             <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" style="display:inline">
               <button class="btn btn-success btn-sm" name="together" value="no">✓ Done</button>
@@ -134,7 +146,7 @@
       {% endfor %}
     </div>
   {% else %}
-    <p class="empty-state">No spontaneous tasks. Enjoy! 🌻</p>
+    <p class="empty-state">No spontaneous tasks 🌻</p>
   {% endif %}
 </div>
 
@@ -148,7 +160,7 @@
     </div>
     <form method="POST" action="{{ url_for('add_task') }}">
       <div class="form-group">
-        <label>Pick an icon</label>
+        <label>Icon</label>
         <div class="icon-picker">
           {% for ic in icons %}
           <span class="icon-opt {% if loop.first %}selected{% endif %}" onclick="selectIcon('{{ ic }}',this)">{{ ic }}</span>
@@ -161,14 +173,19 @@
         <input type="text" name="title" id="task-title-input" required placeholder="e.g. Wash dishes">
       </div>
       <div class="form-group">
+        <label>Estimated duration & points</label>
+        <div class="duration-wrap">
+          <input type="range" name="duration_mins" id="dur-slider" min="0" max="120" step="5" value="20" oninput="updateDuration(this.value)">
+          <span class="duration-label" id="dur-label">20 min</span>
+        </div>
+        <span class="pts-preview" id="pts-preview">+10 pts</span>
+        <input type="hidden" name="points" id="task-points-hidden" value="10">
+      </div>
+      <div class="form-group">
         <label>Description (optional)</label>
         <input type="text" name="description" placeholder="Any extra details...">
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label>Points</label>
-          <input type="number" name="points" id="task-points-input" value="10" min="1" max="200">
-        </div>
         <div class="form-group">
           <label>Assign to</label>
           <select name="assigned_to">
@@ -189,7 +206,7 @@
       <div id="planned-options" class="hidden">
         <div class="form-row">
           <div class="form-group">
-            <label>Day of week</label>
+            <label>Day</label>
             <select name="day_of_week">
               {% for day in days %}<option value="{{ day }}">{{ day }}</option>{% endfor %}
             </select>
@@ -218,7 +235,17 @@
     <form method="POST" action="{{ url_for('add_suggested_task') }}">
       <input type="hidden" name="title" id="sug-title">
       <input type="hidden" name="icon" id="sug-icon">
-      <input type="hidden" name="points" id="sug-points">
+      <input type="hidden" name="points" id="sug-base-points">
+
+      <div class="form-group">
+        <label>Duration & points</label>
+        <div class="duration-wrap">
+          <input type="range" name="duration_mins" id="sug-dur-slider" min="0" max="120" step="5" value="20" oninput="updateSugDuration(this.value)">
+          <span class="duration-label" id="sug-dur-label">20 min</span>
+        </div>
+        <span class="pts-preview" id="sug-pts-preview">+10 pts</span>
+      </div>
+
       <div class="form-group">
         <label>Type</label>
         <div class="radio-group">
@@ -247,4 +274,47 @@
   </div>
 </div>
 
+<script>
+const PTS_PER_MIN = {{ points_per_minute }};
+
+function calcPoints(base, mins) {
+  if (!mins || mins <= 0) return base;
+  const mult = Math.min(3.0, Math.max(0.5, mins / 20.0));
+  return Math.max(1, Math.round(base * mult));
+}
+
+function updateDuration(val) {
+  const mins = parseInt(val);
+  document.getElementById('dur-label').textContent = mins === 0 ? 'flexible' : mins + ' min';
+  const base = 10;
+  const pts = calcPoints(base, mins);
+  document.getElementById('pts-preview').textContent = '+' + pts + ' pts';
+  document.getElementById('task-points-hidden').value = pts;
+}
+
+let sugBasePts = 10;
+function updateSugDuration(val) {
+  const mins = parseInt(val);
+  document.getElementById('sug-dur-label').textContent = mins === 0 ? 'flexible' : mins + ' min';
+  const pts = calcPoints(sugBasePts, mins);
+  document.getElementById('sug-pts-preview').textContent = '+' + pts + ' pts';
+}
+
+function openSuggested(title, icon, points) {
+  sugBasePts = parseInt(points);
+  document.getElementById('sug-title').value = title;
+  document.getElementById('sug-icon').value = icon;
+  document.getElementById('sug-base-points').value = points;
+  document.getElementById('sug-modal-title').textContent = icon + ' ' + title;
+  // Reset slider to default duration
+  document.getElementById('sug-dur-slider').value = 20;
+  updateSugDuration(20);
+  toggleModal('suggested-modal');
+}
+
+function toggleSuggested(btn) {
+  btn.classList.toggle('open');
+  document.getElementById('suggested-body').classList.toggle('open');
+}
+</script>
 {% endblock %}
