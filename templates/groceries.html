@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div><h1>🛒 Groceries</h1><p class="subtitle">Shared list for your household</p></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-primary" onclick="toggleModal('add-grocery-modal')">+ Add item</button>
+    <form method="POST" action="{{ url_for('clear_checked_groceries') }}" style="display:inline">
+      <button class="btn btn-secondary">🗑️ Clear checked</button>
+    </form>
+  </div>
+</div>
+<div class="panel">
+  {% if grouped %}
+    {% for category, items in grouped.items() %}
+    <div class="grocery-category">
+      <div class="grocery-cat-title">{{ category }}</div>
+      <div class="grocery-items">
+        {% for item in items %}
+        <div class="grocery-item {% if item.checked %}checked{% endif %}">
+          <form method="POST" action="{{ url_for('check_grocery', item_id=item.id) }}" style="display:inline">
+            <button class="btn-done" style="min-width:36px">{% if item.checked %}✓{% else %}○{% endif %}</button>
+          </form>
+          <span class="grocery-name">{{ item.name }}</span>
+          <span class="grocery-qty">×{{ item.quantity }}</span>
+          <span class="grocery-who">{{ item.added_by_name }}</span>
+          <form method="POST" action="{{ url_for('delete_grocery', item_id=item.id) }}" style="display:inline;margin-left:auto">
+            <button class="btn btn-danger btn-sm">✕</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="empty-state">List is empty! Add what you need 🛒</p>
+  {% endif %}
+</div>
+<div id="add-grocery-modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="toggleModal('add-grocery-modal')"></div>
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>🛒 Add item</h2>
+      <button onclick="toggleModal('add-grocery-modal')" class="modal-close">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('add_grocery') }}">
+      <div class="form-group"><label>Item name</label><input type="text" name="name" required placeholder="e.g. Milk" autofocus></div>
+      <div class="form-row">
+        <div class="form-group"><label>Quantity</label><input type="text" name="quantity" value="1" placeholder="e.g. 2 or 500g"></div>
+        <div class="form-group">
+          <label>Category</label>
+          <select name="category">
+            {% for cat in categories %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">▶ Add to list</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

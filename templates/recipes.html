@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div><h1>🍽️ Recipe wishlist</h1><p class="subtitle">Things we want to cook together</p></div>
+  <button class="btn btn-primary" onclick="toggleModal('add-recipe-modal')">+ Add recipe</button>
+</div>
+<div class="panel">
+  {% if recipes %}
+    <div class="recipes-grid">
+      {% for recipe in recipes %}
+      <div class="recipe-card">
+        <div class="recipe-title">🍴 {{ recipe.title }}</div>
+        {% if recipe.url %}<a href="{{ recipe.url }}" target="_blank" class="recipe-url">🔗 Open link</a>{% endif %}
+        {% if recipe.notes %}<p class="recipe-notes">📝 {{ recipe.notes }}</p>{% endif %}
+        <div class="recipe-meta">
+          <span>by {{ recipe.added_by_name }}</span>
+          <form method="POST" action="{{ url_for('delete_recipe', recipe_id=recipe.id) }}" style="display:inline">
+            <button class="btn btn-danger btn-sm" onclick="return confirm('Remove?')">✕</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty-state">No recipes yet! Add something delicious 🌽</p>
+  {% endif %}
+</div>
+<div id="add-recipe-modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="toggleModal('add-recipe-modal')"></div>
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>🍴 Add recipe</h2>
+      <button onclick="toggleModal('add-recipe-modal')" class="modal-close">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('add_recipe') }}">
+      <div class="form-group"><label>Recipe name</label><input type="text" name="title" required placeholder="e.g. Grandma's pasta" autofocus></div>
+      <div class="form-group"><label>Link (optional)</label><input type="url" name="url" placeholder="https://..."></div>
+      <div class="form-group"><label>Notes (optional)</label><textarea name="notes" rows="3" placeholder="Any notes or why you want to make it..." style="width:100%;background:var(--bg3);border:2px solid var(--border);border-radius:8px;padding:10px;font-family:'Nunito',sans-serif;font-size:1rem;color:var(--text)"></textarea></div>
+      <button type="submit" class="btn btn-primary btn-full">▶ Add recipe</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

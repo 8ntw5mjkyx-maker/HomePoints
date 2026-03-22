@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1>✅ Tasks</h1>
+    <p class="subtitle">Plan and track your chores</p>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <a href="{{ url_for('wheel') }}" class="btn btn-together">🎡 Spin wheel</a>
+    <button class="btn btn-primary" onclick="toggleModal('add-task-modal')">+ Add task</button>
+  </div>
+</div>
+
+<!-- Suggested tasks with delete button -->
+<div class="panel">
+  <div class="panel-title" style="justify-content:space-between">
+    <span>💡 Suggested tasks</span>
+    {% if suggested|length < all_suggested_count %}
+    <form method="POST" action="{{ url_for('reset_suggested') }}" style="display:inline">
+      <button class="btn btn-secondary btn-sm">↺ Reset</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if suggested %}
+  <div class="suggested-grid">
+    {% for s in suggested %}
+    <div class="suggested-card-wrap" style="position:relative">
+      <div class="suggested-card" onclick="openSuggested('{{ s.title }}','{{ s.icon }}','{{ s.points }}')">
+        <span class="suggested-icon">{{ s.icon }}</span>
+        <span class="suggested-title">{{ s.title }}</span>
+        <span class="suggested-pts">+{{ s.points }} pts</span>
+        <span class="suggested-desc">{{ s.desc }}</span>
+      </div>
+      <form method="POST" action="{{ url_for('hide_suggested') }}" style="position:absolute;top:4px;right:4px">
+        <input type="hidden" name="sug_id" value="{{ s.id }}">
+        <button type="submit" class="suggested-hide-btn" title="Hide this suggestion" onclick="event.stopPropagation()">✕</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty-state">All suggestions hidden. <form method="POST" action="{{ url_for('reset_suggested') }}" style="display:inline"><button class="btn btn-secondary btn-sm">↺ Reset</button></form></p>
+  {% endif %}
+</div>
+
+<!-- Planned tasks -->
+<div class="panel">
+  <div class="panel-title">📅 Planned schedule</div>
+  <div class="view-tabs">
+    <a href="{{ url_for('tasks', view='week') }}" class="view-tab {% if view=='week' %}active{% endif %}">📅 Week</a>
+    <a href="{{ url_for('tasks', view='month') }}" class="view-tab {% if view=='month' %}active{% endif %}">🗓️ Month</a>
+  </div>
+
+  {% if view == 'week' %}
+  <div class="week-grid">
+    {% for day in days %}
+    {% set is_today = day == now.strftime('%A') %}
+    <div class="day-col {% if is_today %}day-today{% endif %}">
+      <div class="day-header">{{ day[:3].upper() }}{% if is_today %}<br><span style="font-size:0.4rem">TODAY</span>{% endif %}</div>
+      {% if planned[day] %}
+        {% for task in planned[day] %}
+        <div class="day-task">
+          <span class="day-task-icon">{{ task.icon if task.icon else '⭐' }}</span>
+          <div class="day-task-title">{{ task.title }}</div>
+          {% if task.frequency and task.frequency != 'once' %}<div class="day-task-freq">{{ task.frequency|replace('_',' ') }}</div>{% endif %}
+          <div class="day-task-pts">+{{ task.points }}pts</div>
+          <div style="display:flex;gap:3px;margin-top:5px;flex-wrap:wrap">
+            <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" style="display:inline">
+              <button class="btn-done" name="together" value="no">✓</button>
+              <button class="btn-done together" name="together" value="yes">✓✓</button>
+            </form>
+            <form method="POST" action="{{ url_for('delete_task', task_id=task.id) }}" style="display:inline">
+              <button class="btn-done" style="border-color:var(--red);color:var(--red)" onclick="return confirm('Delete?')">✕</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="day-empty">·</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="text-align:center;margin-bottom:1rem"><h3 style="font-size:0.75rem">{{ current_month }}</h3></div>
+  <div class="month-grid">
+    {% for day_name in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
+    <div class="month-day-header">{{ day_name }}</div>
+    {% endfor %}
+    {% for week in month_days %}
+      {% for day_num in week %}
+      <div class="month-day {% if day_num == today.day %}today{% endif %} {% if day_num == 0 %}other-month{% endif %}">
+        {% if day_num != 0 %}
+        <div class="month-day-num">{{ day_num }}</div>
+        {% set day_name = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][loop.index0] %}
+        {% for task in planned[day_name] %}
+        <span class="month-task-dot">{{ task.icon if task.icon else '⭐' }} {{ task.title }}</span>
+        {% endfor %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Spontaneous tasks -->
+<div class="panel">
+  <div class="panel-title">⚡ Spontaneous tasks</div>
+  {% if spontaneous %}
+    <div class="task-cards">
+      {% for task in spontaneous %}
+      <div class="task-card">
+        <div class="task-card-header">
+          <span class="task-card-icon">{{ task.icon if task.icon else '⭐' }}</span>
+          <span class="task-card-title">{{ task.title }}</span>
+          <span class="badge badge-points">+{{ task.points }} pts</span>
+        </div>
+        {% if task.description %}<p class="task-card-desc">{{ task.description }}</p>{% endif %}
+        <div class="task-card-footer">
+          <span class="task-meta" style="font-size:0.85rem;color:var(--text2)">Added by you</span>
+          <div class="task-actions">
+            <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" style="display:inline">
+              <button class="btn btn-success btn-sm" name="together" value="no">✓ Done</button>
+              <button class="btn btn-together btn-sm" name="together" value="yes">✓✓ Together 2×</button>
+            </form>
+            <form method="POST" action="{{ url_for('delete_task', task_id=task.id) }}" style="display:inline">
+              <button class="btn btn-danger btn-sm" onclick="return confirm('Delete?')">✕</button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty-state">No spontaneous tasks. Enjoy! 🌻</p>
+  {% endif %}
+</div>
+
+<!-- Add task modal -->
+<div id="add-task-modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="toggleModal('add-task-modal')"></div>
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>📝 Add a task</h2>
+      <button onclick="toggleModal('add-task-modal')" class="modal-close">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('add_task') }}">
+      <div class="form-group">
+        <label>Pick an icon</label>
+        <div class="icon-picker">
+          {% for ic in icons %}
+          <span class="icon-opt {% if loop.first %}selected{% endif %}" onclick="selectIcon('{{ ic }}',this)">{{ ic }}</span>
+          {% endfor %}
+        </div>
+        <input type="hidden" name="icon" id="selected-icon" value="{{ icons[0] }}">
+      </div>
+      <div class="form-group">
+        <label>Task name</label>
+        <input type="text" name="title" id="task-title-input" required placeholder="e.g. Wash dishes">
+      </div>
+      <div class="form-group">
+        <label>Description (optional)</label>
+        <input type="text" name="description" placeholder="Any extra details...">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Points</label>
+          <input type="number" name="points" id="task-points-input" value="10" min="1" max="200">
+        </div>
+        <div class="form-group">
+          <label>Assign to</label>
+          <select name="assigned_to">
+            <option value="">Anyone</option>
+            {% for member in members %}
+            <option value="{{ member.id }}">{{ member.username }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Type</label>
+        <div class="radio-group">
+          <label class="radio-label"><input type="radio" name="task_type" value="spontaneous" checked onchange="toggleDayPicker(this)"> ⚡ Spontaneous</label>
+          <label class="radio-label"><input type="radio" name="task_type" value="planned" onchange="toggleDayPicker(this)"> 📅 Planned</label>
+        </div>
+      </div>
+      <div id="planned-options" class="hidden">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Day of week</label>
+            <select name="day_of_week">
+              {% for day in days %}<option value="{{ day }}">{{ day }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Frequency</label>
+            <select name="frequency">
+              {% for f in frequencies %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">▶ Add task</button>
+    </form>
+  </div>
+</div>
+
+<!-- Suggested quick-add modal -->
+<div id="suggested-modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="toggleModal('suggested-modal')"></div>
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 id="sug-modal-title">Add task</h2>
+      <button onclick="toggleModal('suggested-modal')" class="modal-close">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('add_suggested_task') }}">
+      <input type="hidden" name="title" id="sug-title">
+      <input type="hidden" name="icon" id="sug-icon">
+      <input type="hidden" name="points" id="sug-points">
+      <div class="form-group">
+        <label>Type</label>
+        <div class="radio-group">
+          <label class="radio-label"><input type="radio" name="task_type" value="spontaneous" checked onchange="toggleSugDay(this)"> ⚡ Spontaneous</label>
+          <label class="radio-label"><input type="radio" name="task_type" value="planned" onchange="toggleSugDay(this)"> 📅 Planned</label>
+        </div>
+      </div>
+      <div id="sug-planned-opts" class="hidden">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Day</label>
+            <select name="day_of_week">
+              {% for day in days %}<option value="{{ day }}">{{ day }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Frequency</label>
+            <select name="frequency">
+              {% for f in frequencies %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">▶ Add task</button>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

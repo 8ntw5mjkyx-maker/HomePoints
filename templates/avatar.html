@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>🧑‍🌾 Customize your character</h1>
+    <p class="subtitle">Pick your Stardew-style look!</p>
+  </div>
+</div>
+
+<div class="two-col">
+  <!-- Preview -->
+  <div class="panel" style="display:flex;flex-direction:column;align-items:center;gap:1.5rem">
+    <div class="panel-title" style="width:100%">👀 Preview</div>
+    <div style="transform:scale(2);transform-origin:top center;margin-top:40px;margin-bottom:60px">
+      <svg id="avatar-preview" width="64" height="80" viewBox="0 0 64 80" xmlns="http://www.w3.org/2000/svg" style="image-rendering:pixelated">
+        <!-- Body / shirt -->
+        <rect id="pv-top" x="16" y="44" width="32" height="28" fill="{{ avatar_tops[user.avatar_top] }}"/>
+        <!-- Arms -->
+        <rect id="pv-arm-l" x="6" y="44" width="10" height="22" fill="{{ avatar_tops[user.avatar_top] }}"/>
+        <rect id="pv-arm-r" x="48" y="44" width="10" height="22" fill="{{ avatar_tops[user.avatar_top] }}"/>
+        <!-- Hands -->
+        <rect id="pv-hand-l" x="6" y="62" width="10" height="8" fill="{{ avatar_skins[user.avatar_skin] }}"/>
+        <rect id="pv-hand-r" x="48" y="62" width="10" height="8" fill="{{ avatar_skins[user.avatar_skin] }}"/>
+        <!-- Neck -->
+        <rect id="pv-neck" x="26" y="38" width="12" height="8" fill="{{ avatar_skins[user.avatar_skin] }}"/>
+        <!-- Head -->
+        <rect id="pv-head" x="14" y="10" width="36" height="32" rx="4" fill="{{ avatar_skins[user.avatar_skin] }}"/>
+        <!-- Eyes -->
+        <rect x="22" y="20" width="6" height="6" fill="#1a1a2e"/>
+        <rect x="36" y="20" width="6" height="6" fill="#1a1a2e"/>
+        <!-- Eye shine -->
+        <rect x="24" y="21" width="2" height="2" fill="#fff"/>
+        <rect x="38" y="21" width="2" height="2" fill="#fff"/>
+        <!-- Smile -->
+        <rect x="24" y="30" width="4" height="2" fill="#1a1a2e"/>
+        <rect x="36" y="30" width="4" height="2" fill="#1a1a2e"/>
+        <rect x="28" y="32" width="8" height="2" fill="#1a1a2e"/>
+        <!-- Hair -->
+        <rect id="pv-hair-top" x="14" y="6" width="36" height="12" rx="3" fill="{{ avatar_hairs[user.avatar_hair] }}"/>
+        <rect id="pv-hair-side-l" x="10" y="10" width="6" height="20" fill="{{ avatar_hairs[user.avatar_hair] }}"/>
+        <rect id="pv-hair-side-r" x="48" y="10" width="6" height="20" fill="{{ avatar_hairs[user.avatar_hair] }}"/>
+        <rect id="pv-hair-back" x="14" y="10" width="36" height="6" fill="{{ avatar_hairs[user.avatar_hair] }}"/>
+        <!-- Ears -->
+        <rect id="pv-ear-l" x="10" y="20" width="6" height="8" fill="{{ avatar_skins[user.avatar_skin] }}"/>
+        <rect id="pv-ear-r" x="48" y="20" width="6" height="8" fill="{{ avatar_skins[user.avatar_skin] }}"/>
+        <!-- Legs -->
+        <rect x="16" y="70" width="14" height="10" fill="#2c3e50"/>
+        <rect x="34" y="70" width="14" height="10" fill="#2c3e50"/>
+        <!-- Shoes -->
+        <rect x="14" y="76" width="16" height="6" fill="#1a1a2e"/>
+        <rect x="34" y="76" width="16" height="6" fill="#1a1a2e"/>
+      </svg>
+    </div>
+
+    <p style="font-family:'Press Start 2P',monospace;font-size:0.6rem;color:var(--text2);text-align:center">{{ user.username }}</p>
+  </div>
+
+  <!-- Controls -->
+  <div class="panel">
+    <div class="panel-title">🎨 Customize</div>
+    <form method="POST" action="{{ url_for('avatar') }}">
+
+      <!-- Skin tone -->
+      <div class="form-group">
+        <label>Skin tone</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+          {% for i, color in enumerate(avatar_skins) %}
+          <label style="cursor:pointer">
+            <input type="radio" name="skin" value="{{ i }}" {% if user.avatar_skin==i %}checked{% endif %}
+                   onchange="updatePreview()" style="display:none">
+            <div class="color-swatch {% if user.avatar_skin==i %}selected{% endif %}"
+                 style="background:{{ color }}" onclick="selectSwatch(this,'skin',{{ i }})"></div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Hair color -->
+      <div class="form-group">
+        <label>Hair color</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+          {% for i, color in enumerate(avatar_hairs) %}
+          <label style="cursor:pointer">
+            <input type="radio" name="hair" value="{{ i }}" {% if user.avatar_hair==i %}checked{% endif %}
+                   style="display:none">
+            <div class="color-swatch {% if user.avatar_hair==i %}selected{% endif %}"
+                 style="background:{{ color }}" onclick="selectSwatch(this,'hair',{{ i }})"></div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Top / shirt color -->
+      <div class="form-group">
+        <label>Shirt color</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+          {% for i, color in enumerate(avatar_tops) %}
+          <label style="cursor:pointer">
+            <input type="radio" name="top" value="{{ i }}" {% if user.avatar_top==i %}checked{% endif %}
+                   style="display:none">
+            <div class="color-swatch {% if user.avatar_top==i %}selected{% endif %}"
+                 style="background:{{ color }}" onclick="selectSwatch(this,'top',{{ i }})"></div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-full">💾 Save avatar</button>
+    </form>
+  </div>
+</div>
+
+<style>
+.color-swatch {
+  width: 36px; height: 36px;
+  border: 3px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.color-swatch:hover { transform: scale(1.15); }
+.color-swatch.selected { border-color: #fff; box-shadow: 0 0 0 3px var(--accent); transform: scale(1.15); }
+</style>
+
+<script>
+const SKINS = {{ avatar_skins | tojson }};
+const HAIRS = {{ avatar_hairs | tojson }};
+const TOPS  = {{ avatar_tops  | tojson }};
+
+let currentSkin = {{ user.avatar_skin }};
+let currentHair = {{ user.avatar_hair }};
+let currentTop  = {{ user.avatar_top }};
+
+function selectSwatch(el, type, idx) {
+  // Deselect siblings
+  el.parentElement.parentElement.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+  el.classList.add('selected');
+  // Update radio
+  el.parentElement.querySelector('input[type=radio]').checked = true;
+  if (type === 'skin') currentSkin = idx;
+  if (type === 'hair') currentHair = idx;
+  if (type === 'top')  currentTop  = idx;
+  renderAvatar();
+}
+
+function renderAvatar() {
+  const skin = SKINS[currentSkin];
+  const hair = HAIRS[currentHair];
+  const top  = TOPS[currentTop];
+  // Update skin elements
+  ['pv-head','pv-neck','pv-hand-l','pv-hand-r','pv-ear-l','pv-ear-r'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.setAttribute('fill', skin);
+  });
+  // Update hair elements
+  ['pv-hair-top','pv-hair-side-l','pv-hair-side-r','pv-hair-back'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.setAttribute('fill', hair);
+  });
+  // Update top elements
+  ['pv-top','pv-arm-l','pv-arm-r'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.setAttribute('fill', top);
+  });
+}
+</script>
+{% endblock %}

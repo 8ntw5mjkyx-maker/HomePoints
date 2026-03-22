@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block content %}
+{% from base_template if base_template is defined else 'base.html' import pixel_avatar %}
+
+<div class="page-header">
+  <div>
+    <h1>🌅 Hey, {{ user.username }}!</h1>
+    <p class="subtitle">Household: <strong>{{ household.name }}</strong> · Code: <span class="household-code">{{ household.id }}</span></p>
+  </div>
+  <div class="header-points">
+    <div class="big-points">⭐ {{ user.points }}</div>
+    <div class="points-label">your points</div>
+  </div>
+</div>
+
+{% if last_bonus %}
+<div class="bonus-banner">🏆 {{ last_bonus.username }} won last month and got +{{ last_bonus.bonus_points }} bonus points!</div>
+{% endif %}
+
+<div class="two-col">
+  <!-- Today -->
+  <div class="panel">
+    <div class="panel-title">📅 Today — {{ today }}</div>
+    {% if today_tasks %}
+      <div class="today-tasks">
+        {% for task in today_tasks %}
+        <div class="today-task">
+          <span class="today-task-icon">{{ task.icon if task.icon else '⭐' }}</span>
+          <div class="today-task-info">
+            <div class="today-task-title">{{ task.title }}</div>
+            <div class="today-task-type">{{ task.task_type }}</div>
+          </div>
+          <span class="today-pts">+{{ task.points }}</span>
+          <div class="today-actions">
+            <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" style="display:inline">
+              <button class="btn-done" name="together" value="no" title="Done alone">✓</button>
+              <button class="btn-done together" name="together" value="yes" title="2× together!">✓✓</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty-state">🌟 All clear today!</p>
+    {% endif %}
+    <a href="{{ url_for('tasks') }}" class="see-all">See all tasks →</a>
+  </div>
+
+  <!-- Monthly leaderboard -->
+  <div class="panel">
+    <div class="panel-title">🏆 This month</div>
+    {% set max_pts = monthly_stats[0].points if monthly_stats and monthly_stats[0].points > 0 else 1 %}
+    <div class="monthly-board">
+      {% for stat in monthly_stats %}
+      <div class="monthly-bar-wrap">
+        <div class="monthly-bar-pts">⭐ {{ stat.points }}</div>
+        <div class="monthly-bar-outer">
+          <div class="monthly-bar-inner {% if loop.index==1 %}rank-1{% endif %}"
+               style="height:{{ [((stat.points / max_pts) * 100)|int, 4]|max }}%"></div>
+        </div>
+        <div class="monthly-bar-label">{% if loop.index==1 %}👑 {% endif %}{{ stat.member.username }}</div>
+        <div class="monthly-bar-label">{{ stat.tasks }} tasks</div>
+      </div>
+      {% endfor %}
+    </div>
+    <p style="font-size:0.82rem;color:var(--text2);margin-top:10px;text-align:center">🏅 Winner gets +50 pts at month end!</p>
+  </div>
+</div>
+
+<!-- Members with pixel avatars -->
+<div class="panel">
+  <div class="panel-title">👥 Household members</div>
+  <div class="members-grid">
+    {% for member in members %}
+    <div class="member-card {% if member.id==user.id %}is-you{% endif %}">
+      <a href="{{ url_for('avatar') }}" style="display:block">
+        <div class="pixel-avatar-wrap {% if member.id==user.id %}avatar-you{% endif %}">
+          {% set s = avatar_skins[member.avatar_skin] %}
+          {% set h = avatar_hairs[member.avatar_hair] %}
+          {% set t = avatar_tops[member.avatar_top] %}
+          <svg width="56" height="70" viewBox="0 0 64 80" xmlns="http://www.w3.org/2000/svg" style="image-rendering:pixelated">
+            <rect x="16" y="44" width="32" height="28" fill="{{ t }}"/>
+            <rect x="6"  y="44" width="10" height="22" fill="{{ t }}"/>
+            <rect x="48" y="44" width="10" height="22" fill="{{ t }}"/>
+            <rect x="6"  y="62" width="10" height="8"  fill="{{ s }}"/>
+            <rect x="48" y="62" width="10" height="8"  fill="{{ s }}"/>
+            <rect x="26" y="38" width="12" height="8"  fill="{{ s }}"/>
+            <rect x="14" y="10" width="36" height="32" rx="4" fill="{{ s }}"/>
+            <rect x="22" y="20" width="6"  height="6"  fill="#1a1a2e"/>
+            <rect x="36" y="20" width="6"  height="6"  fill="#1a1a2e"/>
+            <rect x="24" y="21" width="2"  height="2"  fill="#fff"/>
+            <rect x="38" y="21" width="2"  height="2"  fill="#fff"/>
+            <rect x="24" y="30" width="4"  height="2"  fill="#1a1a2e"/>
+            <rect x="36" y="30" width="4"  height="2"  fill="#1a1a2e"/>
+            <rect x="28" y="32" width="8"  height="2"  fill="#1a1a2e"/>
+            <rect x="14" y="6"  width="36" height="12" rx="3" fill="{{ h }}"/>
+            <rect x="10" y="10" width="6"  height="20" fill="{{ h }}"/>
+            <rect x="48" y="10" width="6"  height="20" fill="{{ h }}"/>
+            <rect x="10" y="20" width="6"  height="8"  fill="{{ s }}"/>
+            <rect x="48" y="20" width="6"  height="8"  fill="{{ s }}"/>
+            <rect x="16" y="70" width="14" height="10" fill="#2c3e50"/>
+            <rect x="34" y="70" width="14" height="10" fill="#2c3e50"/>
+            <rect x="14" y="76" width="16" height="6"  fill="#1a1a2e"/>
+            <rect x="34" y="76" width="16" height="6"  fill="#1a1a2e"/>
+          </svg>
+        </div>
+      </a>
+      <div class="member-name">{{ member.username }} {% if member.id==user.id %}<span class="you-badge">you</span>{% endif %}</div>
+      <div class="member-points">⭐ {{ member.points }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Week plan -->
+<div class="panel">
+  <div class="panel-title">📋 This week's plan</div>
+  {% if week_tasks %}
+    <ul class="task-list">
+      {% for task in week_tasks %}
+      <li class="task-item">
+        <span class="task-icon">{{ task.icon if task.icon else '⭐' }}</span>
+        <div class="task-info">
+          <span class="task-title">{{ task.title }}</span>
+          <span class="task-meta">{{ task.day_of_week }} · {{ task.frequency if task.frequency else 'once' }}</span>
+        </div>
+        <span class="task-points">+{{ task.points }}pts</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No planned tasks. <a href="{{ url_for('tasks') }}">Add some!</a></p>
+  {% endif %}
+</div>
+
+<!-- Quick actions -->
+<div class="panel">
+  <div class="panel-title">⚡ Quick actions</div>
+  <div class="quick-actions">
+    <a href="{{ url_for('tasks') }}"    class="quick-card"><span class="quick-icon">✅</span><span class="quick-label">Tasks</span></a>
+    <a href="{{ url_for('stats') }}"    class="quick-card"><span class="quick-icon">📊</span><span class="quick-label">Stats</span></a>
+    <a href="{{ url_for('groceries') }}"class="quick-card"><span class="quick-icon">🛒</span><span class="quick-label">Groceries</span></a>
+    <a href="{{ url_for('recipes') }}"  class="quick-card"><span class="quick-icon">🍽️</span><span class="quick-label">Recipes</span></a>
+    <a href="{{ url_for('wheel') }}"    class="quick-card"><span class="quick-icon">🎡</span><span class="quick-label">Wheel</span></a>
+    <a href="{{ url_for('shop') }}"     class="quick-card"><span class="quick-icon">🛍️</span><span class="quick-label">Shop</span></a>
+    <a href="{{ url_for('avatar') }}"   class="quick-card"><span class="quick-icon">🧑‍🌾</span><span class="quick-label">Avatar</span></a>
+  </div>
+</div>
+{% endblock %}

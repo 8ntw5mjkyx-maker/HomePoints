@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-header">
+      <span class="auth-logo">🌱</span>
+      <h1>HomePoints</h1>
+      <p>Start your journey!</p>
+    </div>
+    <form method="POST">
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" name="username" required placeholder="choose a name" autofocus>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" name="password" required placeholder="••••••••">
+      </div>
+      <button type="submit" class="btn btn-primary btn-full btn-lg">▶ Create account</button>
+    </form>
+    <div class="auth-footer">Already have one? <a href="{{ url_for('login') }}">Log in</a></div>
+  </div>
+</div>
+{% endblock %}

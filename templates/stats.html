@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div><h1>📊 Statistics</h1><p class="subtitle">How you compare</p></div>
+</div>
+<div class="panel">
+  <div class="panel-title">🔍 Filter</div>
+  <div class="stats-controls">
+    <button class="stats-btn active" onclick="setPeriod('week',this)">This week</button>
+    <button class="stats-btn" onclick="setPeriod('month',this)">This month</button>
+    <button class="stats-btn" onclick="setPeriod('all',this)">All time</button>
+  </div>
+  <div style="margin-top:10px">
+    <select id="task-filter" onchange="loadStats()" style="background:var(--bg3);border:2px solid var(--border);border-radius:8px;padding:8px 12px;font-family:'Nunito',sans-serif;font-size:1rem;color:var(--text);">
+      <option value="">All tasks</option>
+      {% for t in all_task_titles %}
+      <option value="{{ t.title }}">{{ t.icon }} {{ t.title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+<div class="panel">
+  <div class="panel-title">🏆 Tasks completed</div>
+  <div class="chart-wrap"><canvas id="tasksChart" height="80"></canvas></div>
+</div>
+<div class="panel">
+  <div class="panel-title">⭐ Points earned</div>
+  <div class="chart-wrap"><canvas id="pointsChart" height="80"></canvas></div>
+</div>
+<div class="panel">
+  <div class="panel-title">📈 Daily activity (7 days)</div>
+  <div class="chart-wrap"><canvas id="lineChart" height="100"></canvas></div>
+</div>
+<script>
+const COLORS = ['#7c6ff7','#34d399','#f472b6','#fbbf24','#60a5fa','#f87171'];
+Chart.defaults.font.family = "'Nunito', sans-serif";
+Chart.defaults.font.size = 14;
+Chart.defaults.color = '#a99ec5';
+let period = 'week';
+let tasksChart, pointsChart, lineChart;
+function setPeriod(p, btn) {
+  period = p;
+  document.querySelectorAll('.stats-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadStats();
+}
+async function loadStats() {
+  const task = document.getElementById('task-filter').value;
+  const res = await fetch(`/stats/data?period=${period}&task=${encodeURIComponent(task)}`);
+  const data = await res.json();
+  const names = data.map(d => d.name);
+  const bgColors = data.map((_,i) => COLORS[i % COLORS.length]);
+  const opts = { responsive: true, plugins:{legend:{display:false}}, scales:{x:{grid:{color:'rgba(255,255,255,0.05)'}},y:{grid:{color:'rgba(255,255,255,0.05)'},beginAtZero:true,ticks:{stepSize:1}}} };
+  if (tasksChart) tasksChart.destroy();
+  tasksChart = new Chart(document.getElementById('tasksChart'), { type:'bar', data:{labels:names, datasets:[{label:'Tasks',data:data.map(d=>d.tasks),backgroundColor:bgColors,borderColor:'#000',borderWidth:2}]}, options:opts });
+  if (pointsChart) pointsChart.destroy();
+  pointsChart = new Chart(document.getElementById('pointsChart'), { type:'bar', data:{labels:names, datasets:[{label:'Points',data:data.map(d=>d.points),backgroundColor:bgColors,borderColor:'#000',borderWidth:2}]}, options:opts });
+  const dates = data[0]?.weekly.map(w=>w.date.slice(5)) || [];
+  const datasets = data.map((d,i) => ({label:d.name,data:d.weekly.map(w=>w.count),borderColor:COLORS[i%COLORS.length],backgroundColor:COLORS[i%COLORS.length]+'33',borderWidth:3,pointRadius:6,tension:0,fill:false}));
+  if (lineChart) lineChart.destroy();
+  lineChart = new Chart(document.getElementById('lineChart'), { type:'line', data:{labels:dates,datasets}, options:{responsive:true,plugins:{legend:{labels:{font:{size:14},color:'#a99ec5'}}},scales:{x:{grid:{color:'rgba(255,255,255,0.05)'}},y:{grid:{color:'rgba(255,255,255,0.05)'},beginAtZero:true,ticks:{stepSize:1}}}} });
+}
+loadStats();
+</script>
+{% endblock %}

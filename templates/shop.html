@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div><h1>🛍️ Reward shop</h1><p class="subtitle">Spend your points on nice things</p></div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span class="nav-points">⭐ {{ user.points }}</span>
+    <button class="btn btn-primary" onclick="toggleModal('add-reward-modal')">+ Add reward</button>
+  </div>
+</div>
+{% if owed_to_me %}
+<div class="panel">
+  <div class="panel-title">⚠️ You owe these!</div>
+  <div class="task-cards">
+    {% for p in owed_to_me %}
+    <div class="task-card owe-card">
+      <div class="task-card-header">
+        <span class="task-card-title">{{ p.reward_title }}</span>
+        <span class="badge badge-owe">{{ p.buyer_name }} wants this</span>
+      </div>
+      <div class="task-card-footer">
+        <form method="POST" action="{{ url_for('fulfill_purchase', purchase_id=p.id) }}">
+          <button class="btn btn-success btn-sm">✓ Mark done</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+<div class="panel">
+  <div class="panel-title">🎁 Available rewards</div>
+  {% if rewards %}
+    <div class="rewards-grid">
+      {% for reward in rewards %}
+      <div class="reward-card {% if user.points < reward.points_cost %}cant-afford{% endif %}">
+        <div class="reward-header">
+          <span class="reward-title">{{ reward.title }}</span>
+          <span class="badge badge-cost">⭐ {{ reward.points_cost }}</span>
+        </div>
+        {% if reward.description %}<p class="reward-desc">{{ reward.description }}</p>{% endif %}
+        <div class="reward-footer">
+          <span class="reward-meta">by {{ reward.creator_name }}</span>
+          <form method="POST" action="{{ url_for('buy_reward', reward_id=reward.id) }}">
+            <button class="btn btn-gold btn-sm" {% if user.points < reward.points_cost %}disabled{% endif %}>
+              {% if user.points < reward.points_cost %}🔒 Need {{ reward.points_cost - user.points }} more{% else %}▶ Buy{% endif %}
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty-state">No rewards yet. Add something fun! 🎉</p>
+  {% endif %}
+</div>
+<div class="panel">
+  <div class="panel-title">🧾 My purchases</div>
+  {% if my_purchases %}
+    <ul class="task-list">
+      {% for p in my_purchases %}
+      <li class="task-item {% if p.status=='fulfilled' %}done{% endif %}">
+        <div class="task-info">
+          <span class="task-title">{{ p.reward_title }}</span>
+          <span class="task-meta">{{ p.status }}</span>
+        </div>
+        <span class="task-points">⭐ {{ p.points_cost }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">Nothing bought yet.</p>
+  {% endif %}
+</div>
+<div id="add-reward-modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="toggleModal('add-reward-modal')"></div>
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>🎁 Add a reward</h2>
+      <button onclick="toggleModal('add-reward-modal')" class="modal-close">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('add_reward') }}">
+      <div class="form-group"><label>Reward name</label><input type="text" name="title" required placeholder="e.g. Breakfast in bed"></div>
+      <div class="form-group"><label>Description</label><input type="text" name="description" placeholder="Details..."></div>
+      <div class="form-group"><label>Points cost</label><input type="number" name="points_cost" value="50" min="1"></div>
+      <button type="submit" class="btn btn-primary btn-full">▶ Add reward</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
