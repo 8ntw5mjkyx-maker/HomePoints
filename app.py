@@ -640,7 +640,6 @@ def complete_task(task_id):
         conn.execute('UPDATE users SET points=points+? WHERE id=?',(pts,user['id']))
 
         if together:
-            # FIX: Give points to ALL other household members too
             others = conn.execute('SELECT * FROM users WHERE household_id=? AND id!=?',
                                   (user['household_id'],user['id'])).fetchall()
             for o in others:
@@ -649,6 +648,20 @@ def complete_task(task_id):
             flash(f'Together with {members_str}! Everyone got +{pts} pts! 🎉','success')
         else:
             flash(f'+{pts} pts! ⭐','success')
+
+        # Recurring tasks: spawn a fresh pending copy so the series continues
+        freq = task['frequency'] or 'once'
+        if freq != 'once' and task['task_type'] == 'planned':
+            conn.execute('''INSERT INTO tasks
+                (household_id, title, icon, description, points, duration_mins,
+                 task_type, day_of_week, frequency, assigned_to, created_by, status, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',?)''',
+                (task['household_id'], task['title'], task['icon'],
+                 task['description'], task['points'], task['duration_mins'] or 0,
+                 'planned', task['day_of_week'], freq,
+                 task['assigned_to'], task['created_by'],
+                 task['created_at']))  # keep original created_at so biweekly math stays correct
+
         conn.commit()
     conn.close()
     return redirect(request.referrer or url_for('tasks'))
