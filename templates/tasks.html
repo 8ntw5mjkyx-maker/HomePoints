@@ -69,8 +69,9 @@
         <div class="day-task">
           <span class="day-task-icon">{{ task.icon if task.icon else '⭐' }}</span>
           <div class="day-task-title">{{ task.title }}</div>
-          {% if task.frequency and task.frequency != 'once' %}
-          <div class="day-task-freq">{{ task.frequency|replace('_',' ') }}</div>
+          {% if task.frequency and task.frequency != 'once' and task.frequency != 'weekly' %}
+          {% set freq_labels = {'daily':'every day','weekdays':'weekdays','2x_week':'2× week','3x_week':'3× week','biweekly':'biweekly','monthly':'monthly'} %}
+          <div class="day-task-freq">{{ freq_labels.get(task.frequency, task.frequency) }}</div>
           {% endif %}
           <div class="day-task-pts">+{{ task.points }}p</div>
           <div class="day-task-btns">
@@ -204,18 +205,72 @@
         </div>
       </div>
       <div id="planned-options" class="hidden">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Day</label>
-            <select name="day_of_week">
-              {% for day in days %}<option value="{{ day }}">{{ day }}</option>{% endfor %}
+        <div class="form-group">
+          <label>Repeats</label>
+          <select name="frequency" id="freq-select" onchange="showFreqOptions(this.value,'main')">
+            {% for f in frequencies %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}
+          </select>
+        </div>
+
+        <!-- Once / biweekly: pick a weekday -->
+        <div class="form-group hidden" id="main-single-day">
+          <label>On which day?</label>
+          <select name="day_of_week">
+            {% for day in days %}<option value="{{ day }}">{{ day }}</option>{% endfor %}
+          </select>
+        </div>
+
+        <!-- Weekly: tick multiple days -->
+        <div class="form-group hidden" id="main-weekly-days">
+          <label>On which days?</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+            {% for day in days %}
+            <label style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
+              <input type="checkbox" name="days[]" value="{{ day }}" style="width:18px;height:18px">
+              <span style="font-size:.78rem;font-weight:700">{{ day[:2] }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Monthly options -->
+        <div class="form-group hidden" id="main-monthly-opts">
+          <label>Repeat on</label>
+          <div class="radio-group" style="margin-top:6px">
+            <label class="radio-label">
+              <input type="radio" name="monthly_type" value="day_number" checked onchange="showMonthlyType(this.value,'main')">
+              A specific date (e.g. the 15th)
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="monthly_type" value="weekday" onchange="showMonthlyType(this.value,'main')">
+              A specific weekday (e.g. first Monday)
+            </label>
+          </div>
+          <!-- Day number picker -->
+          <div id="main-monthly-day" style="margin-top:10px">
+            <label style="font-family:'Press Start 2P',monospace;font-size:.55rem;color:var(--text2);display:block;margin-bottom:6px">Day of month</label>
+            <select name="monthly_day" style="width:100%;background:var(--bg3);border:2px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;color:var(--text);font-family:'Nunito',sans-serif;font-size:16px">
+              {% for n in range(1,29) %}<option value="{{ n }}">{{ n }}{% if n==1 %}st{% elif n==2 %}nd{% elif n==3 %}rd{% else %}th{% endif %}</option>{% endfor %}
+              <option value="last">Last day of month</option>
             </select>
           </div>
-          <div class="form-group">
-            <label>Frequency</label>
-            <select name="frequency">
-              {% for f in frequencies %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}
-            </select>
+          <!-- Weekday occurrence picker -->
+          <div id="main-monthly-weekday" class="hidden" style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label style="font-family:'Press Start 2P',monospace;font-size:.55rem;color:var(--text2);display:block;margin-bottom:6px">Which</label>
+              <select name="monthly_occurrence" style="width:100%;background:var(--bg3);border:2px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;color:var(--text);font-family:'Nunito',sans-serif;font-size:16px">
+                <option value="first">First</option>
+                <option value="second">Second</option>
+                <option value="third">Third</option>
+                <option value="fourth">Fourth</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-family:'Press Start 2P',monospace;font-size:.55rem;color:var(--text2);display:block;margin-bottom:6px">Weekday</label>
+              <select name="monthly_weekday" style="width:100%;background:var(--bg3);border:2px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;color:var(--text);font-family:'Nunito',sans-serif;font-size:16px">
+                {% for day in days %}<option value="{{ day }}">{{ day }}</option>{% endfor %}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -254,17 +309,54 @@
         </div>
       </div>
       <div id="sug-planned-opts" class="hidden">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Day</label>
-            <select name="day_of_week">
-              {% for day in days %}<option value="{{ day }}">{{ day }}</option>{% endfor %}
+        <div class="form-group">
+          <label>Repeats</label>
+          <select name="frequency" id="sug-freq-select" onchange="showFreqOptions(this.value,'sug')">
+            {% for f in frequencies %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-group hidden" id="sug-single-day">
+          <label>On which day?</label>
+          <select name="day_of_week">
+            {% for day in days %}<option value="{{ day }}">{{ day }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-group hidden" id="sug-weekly-days">
+          <label>On which days?</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+            {% for day in days %}
+            <label style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
+              <input type="checkbox" name="days[]" value="{{ day }}" style="width:18px;height:18px">
+              <span style="font-size:.78rem;font-weight:700">{{ day[:2] }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="form-group hidden" id="sug-monthly-opts">
+          <label>Repeat on</label>
+          <div class="radio-group" style="margin-top:6px">
+            <label class="radio-label">
+              <input type="radio" name="monthly_type" value="day_number" checked onchange="showMonthlyType(this.value,'sug')">
+              A specific date
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="monthly_type" value="weekday" onchange="showMonthlyType(this.value,'sug')">
+              A specific weekday
+            </label>
+          </div>
+          <div id="sug-monthly-day" style="margin-top:10px">
+            <select name="monthly_day" style="width:100%;background:var(--bg3);border:2px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;color:var(--text);font-family:'Nunito',sans-serif;font-size:16px">
+              {% for n in range(1,29) %}<option value="{{ n }}">{{ n }}{% if n==1 %}st{% elif n==2 %}nd{% elif n==3 %}rd{% else %}th{% endif %}</option>{% endfor %}
+              <option value="last">Last day of month</option>
             </select>
           </div>
-          <div class="form-group">
-            <label>Frequency</label>
-            <select name="frequency">
-              {% for f in frequencies %}<option value="{{ f.value }}">{{ f.label }}</option>{% endfor %}
+          <div id="sug-monthly-weekday" class="hidden" style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <select name="monthly_occurrence" style="width:100%;background:var(--bg3);border:2px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;color:var(--text);font-family:'Nunito',sans-serif;font-size:16px">
+              <option value="first">First</option><option value="second">Second</option>
+              <option value="third">Third</option><option value="fourth">Fourth</option>
+            </select>
+            <select name="monthly_weekday" style="width:100%;background:var(--bg3);border:2px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;color:var(--text);font-family:'Nunito',sans-serif;font-size:16px">
+              {% for day in days %}<option value="{{ day }}">{{ day }}</option>{% endfor %}
             </select>
           </div>
         </div>
@@ -276,6 +368,39 @@
 
 <script>
 const PTS_PER_MIN = {{ points_per_minute }};
+
+// Show/hide the right sub-options based on frequency selection
+function showFreqOptions(freq, prefix) {
+  const hide = (id) => { const el=document.getElementById(id); if(el) el.classList.add('hidden'); }
+  const show = (id) => { const el=document.getElementById(id); if(el) el.classList.remove('hidden'); }
+  const p = prefix === 'main' ? 'main' : 'sug';
+
+  hide(p+'-single-day');
+  hide(p+'-weekly-days');
+  hide(p+'-monthly-opts');
+
+  if (freq === 'once' || freq === 'biweekly') {
+    show(p+'-single-day');
+  } else if (freq === 'weekly') {
+    show(p+'-weekly-days');
+  } else if (freq === 'monthly') {
+    show(p+'-monthly-opts');
+  }
+  // daily = nothing extra needed
+}
+
+function showMonthlyType(type, prefix) {
+  const p = prefix === 'main' ? 'main' : 'sug';
+  const dayEl     = document.getElementById(p+'-monthly-day');
+  const weekdayEl = document.getElementById(p+'-monthly-weekday');
+  if (type === 'day_number') {
+    if (dayEl)     { dayEl.style.display = 'block'; }
+    if (weekdayEl) { weekdayEl.classList.add('hidden'); }
+  } else {
+    if (dayEl)     { dayEl.style.display = 'none'; }
+    if (weekdayEl) { weekdayEl.classList.remove('hidden'); }
+  }
+}
 
 function calcPoints(base, mins) {
   if (!mins || mins <= 0) return base;
@@ -306,7 +431,6 @@ function openSuggested(title, icon, points) {
   document.getElementById('sug-icon').value = icon;
   document.getElementById('sug-base-points').value = points;
   document.getElementById('sug-modal-title').textContent = icon + ' ' + title;
-  // Reset slider to default duration
   document.getElementById('sug-dur-slider').value = 20;
   updateSugDuration(20);
   toggleModal('suggested-modal');

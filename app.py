@@ -52,15 +52,20 @@ AVATAR_SKINS = ["#FFDBAC","#F1C27D","#E8BEAC","#C68642","#8D5524","#4A2912"]
 AVATAR_HAIRS = ["#2C1810","#8B4513","#DAA520","#FF6B35","#DC143C","#4B0082","#1a1a2e","#FF69B4","#00CED1","#A0A0A0"]
 AVATAR_TOPS  = ["#7c6ff7","#34d399","#f472b6","#fbbf24","#60a5fa","#f87171","#a78bfa","#fb923c"]
 
+# Frequency is now stored as a JSON-like string:
+# "once"          - one time only
+# "daily"         - every day
+# "weekly:Mon"    - every Monday
+# "weekly:Mon,Wed,Fri" - every Mon, Wed, Fri (custom days)
+# "biweekly:Mon"  - every other Monday
+# "monthly:15"    - every 15th of the month
+# "monthly:first:Mon" - first Monday of each month
 FREQUENCY_OPTIONS = [
-    {"value": "once",      "label": "Once"},
-    {"value": "daily",     "label": "Every day"},
-    {"value": "weekdays",  "label": "Weekdays (Mon-Fri)"},
-    {"value": "2x_week",   "label": "Twice a week"},
-    {"value": "3x_week",   "label": "3× a week"},
-    {"value": "weekly",    "label": "Once a week"},
-    {"value": "biweekly",  "label": "Every 2 weeks"},
-    {"value": "monthly",   "label": "Once a month"},
+    {"value": "once",        "label": "Does not repeat"},
+    {"value": "daily",       "label": "Every day"},
+    {"value": "weekly",      "label": "Weekly (pick days)"},
+    {"value": "biweekly",    "label": "Every 2 weeks"},
+    {"value": "monthly",     "label": "Monthly"},
 ]
 
 DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
@@ -89,10 +94,14 @@ def migrate_db(conn):
 
     u_existing = [row[1] for row in c.execute("PRAGMA table_info(users)").fetchall()]
     for col, sql in [
-        ("avatar_skin",        "ALTER TABLE users ADD COLUMN avatar_skin INTEGER DEFAULT 0"),
-        ("avatar_hair",        "ALTER TABLE users ADD COLUMN avatar_hair INTEGER DEFAULT 0"),
-        ("avatar_hair_long",   "ALTER TABLE users ADD COLUMN avatar_hair_long INTEGER DEFAULT 0"),
-        ("avatar_top",         "ALTER TABLE users ADD COLUMN avatar_top INTEGER DEFAULT 0"),
+        ("avatar_hair_style",  "ALTER TABLE users ADD COLUMN avatar_hair_style TEXT DEFAULT 'short'"),
+        ("avatar_hair_color",  "ALTER TABLE users ADD COLUMN avatar_hair_color TEXT DEFAULT '#8B4513'"),
+        ("avatar_skin_color",  "ALTER TABLE users ADD COLUMN avatar_skin_color TEXT DEFAULT '#FFDBAC'"),
+        ("avatar_shirt",       "ALTER TABLE users ADD COLUMN avatar_shirt TEXT DEFAULT '#e74c3c'"),
+        ("avatar_shirt_dark",  "ALTER TABLE users ADD COLUMN avatar_shirt_dark TEXT DEFAULT '#c0392b'"),
+        ("avatar_pants",       "ALTER TABLE users ADD COLUMN avatar_pants TEXT DEFAULT '#4a6fa5'"),
+        ("avatar_outfit",      "ALTER TABLE users ADD COLUMN avatar_outfit TEXT DEFAULT 'tshirt'"),
+        ("avatar_accessory",   "ALTER TABLE users ADD COLUMN avatar_accessory TEXT DEFAULT 'none'"),
         ("hidden_suggestions", "ALTER TABLE users ADD COLUMN hidden_suggestions TEXT DEFAULT ''"),
     ]:
         if col not in u_existing: c.execute(sql)
@@ -105,8 +114,14 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL, password TEXT NOT NULL,
         household_id TEXT, points INTEGER DEFAULT 0,
-        avatar_skin INTEGER DEFAULT 0, avatar_hair INTEGER DEFAULT 0,
-        avatar_hair_long INTEGER DEFAULT 0, avatar_top INTEGER DEFAULT 0,
+        avatar_hair_style TEXT DEFAULT 'short',
+        avatar_hair_color TEXT DEFAULT '#8B4513',
+        avatar_skin_color TEXT DEFAULT '#FFDBAC',
+        avatar_shirt TEXT DEFAULT '#e74c3c',
+        avatar_shirt_dark TEXT DEFAULT '#c0392b',
+        avatar_pants TEXT DEFAULT '#4a6fa5',
+        avatar_outfit TEXT DEFAULT 'tshirt',
+        avatar_accessory TEXT DEFAULT 'none',
         hidden_suggestions TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
@@ -169,6 +184,31 @@ app.jinja_env.globals['enumerate'] = enumerate
 
 def hash_password(p): return hashlib.sha256(p.encode()).hexdigest()
 
+def build_dow(form, freq):
+    """Build the day_of_week storage string based on frequency type."""
+    if freq == 'daily':
+        return 'daily'
+    elif freq == 'weekly':
+        # Get selected checkboxes: days[] = ['Monday','Wednesday',...]
+        days = form.getlist('days[]')
+        if not days:
+            days = [form.get('day_of_week', 'Monday')]
+        return ','.join([d for d in days if d in DAYS])
+    elif freq == 'biweekly':
+        return form.get('day_of_week', 'Monday')
+    elif freq == 'monthly':
+        monthly_type = form.get('monthly_type', 'day_number')
+        if monthly_type == 'day_number':
+            return form.get('monthly_day', '1')
+        else:
+            # "first Monday" etc
+            occurrence = form.get('monthly_occurrence', 'first')
+            weekday    = form.get('monthly_weekday', 'Monday')
+            return f'{occurrence}:{weekday}'
+    elif freq == 'once':
+        return form.get('day_of_week', 'Monday')
+    return form.get('day_of_week', 'Monday')
+
 def login_required(f):
     from functools import wraps
     @wraps(f)
@@ -205,47 +245,83 @@ def calculate_points_for_duration(base_points, duration_mins):
     multiplier = min(3.0, max(0.5, duration_mins / 20.0))
     return max(1, int(base_points * multiplier))
 
+def parse_frequency(task):
+    """Parse the frequency and day_of_week fields into a structured dict."""
+    freq = task['frequency'] or 'once'
+    dow  = task['day_of_week'] or ''
+    return {'freq': freq, 'dow': dow}
+
 def should_task_appear_today(task, today_date):
     """Check if a planned task should appear today based on frequency."""
     freq = task['frequency'] or 'once'
-    dow = task['day_of_week']
-    today_name = today_date.strftime('%A')
-    today_weekday = today_date.weekday()  # 0=Mon, 6=Sun
+    dow  = task['day_of_week'] or ''  # stores extra data depending on freq type
+    today_name    = today_date.strftime('%A')   # e.g. "Monday"
+    today_weekday = today_date.weekday()         # 0=Mon … 6=Sun
+    today_day_num = today_date.day               # 1–31
 
     if freq == 'once':
+        # dow stores the specific weekday it was set for
         return dow == today_name
+
     elif freq == 'daily':
         return True
-    elif freq == 'weekdays':
-        return today_weekday < 5  # Mon-Fri
+
     elif freq == 'weekly':
-        return dow == today_name
-    elif freq == '2x_week':
-        # Appears on the assigned day AND 3 days later
-        if not dow: return False
-        assigned_idx = DAYS.index(dow) if dow in DAYS else 0
-        second_idx = (assigned_idx + 3) % 7
-        return today_weekday in [assigned_idx, second_idx]
-    elif freq == '3x_week':
-        # Appears Mon/Wed/Fri if no specific day
-        if not dow: return today_weekday in [0, 2, 4]
-        assigned_idx = DAYS.index(dow) if dow in DAYS else 0
-        second_idx = (assigned_idx + 2) % 7
-        third_idx = (assigned_idx + 4) % 7
-        return today_weekday in [assigned_idx, second_idx, third_idx]
+        # dow stores comma-separated days e.g. "Monday,Wednesday,Friday"
+        if not dow:
+            return False
+        selected_days = [d.strip() for d in dow.split(',')]
+        return today_name in selected_days
+
     elif freq == 'biweekly':
-        # Every 2 weeks from task creation
-        if not dow or dow != today_name: return False
+        # dow stores the weekday e.g. "Monday"
+        if not dow or dow != today_name:
+            return False
         try:
             created = datetime.strptime(task['created_at'][:10], '%Y-%m-%d').date()
-            weeks_since = (today_date - created).days // 7
-            return weeks_since % 2 == 0
-        except: return True
+            days_until = (DAYS.index(dow) - created.weekday()) % 7
+            first_occurrence = created + timedelta(days=days_until)
+            weeks_since = (today_date - first_occurrence).days // 7
+            return weeks_since >= 0 and weeks_since % 2 == 0
+        except:
+            return True
+
     elif freq == 'monthly':
-        # Once a month - on the assigned day in week 1
-        if not dow or dow != today_name: return False
-        return today_date.day <= 7  # First occurrence of that weekday in month
-    return dow == today_name
+        # dow stores either:
+        #   "15"           → every 15th of month
+        #   "last"         → last day of month
+        #   "first:Monday" → first Monday of month
+        #   "second:Monday"→ second Monday of month
+        if not dow:
+            return False
+        if dow.isdigit():
+            # Specific day number
+            target = int(dow)
+            # Handle months with fewer days
+            import calendar as cal
+            max_day = cal.monthrange(today_date.year, today_date.month)[1]
+            return today_day_num == min(target, max_day)
+        elif dow == 'last':
+            import calendar as cal
+            last_day = cal.monthrange(today_date.year, today_date.month)[1]
+            return today_day_num == last_day
+        elif ':' in dow:
+            parts = dow.split(':')
+            occurrence = parts[0]  # "first","second","third","fourth"
+            weekday_name = parts[1] if len(parts) > 1 else ''
+            if weekday_name != today_name:
+                return False
+            # Find which occurrence of this weekday today is
+            occurrence_map = {'first':1,'second':2,'third':3,'fourth':4}
+            target_n = occurrence_map.get(occurrence, 1)
+            # Count how many times this weekday has appeared this month up to today
+            count = sum(1 for d in range(1, today_day_num + 1)
+                       if datetime(today_date.year, today_date.month, d).strftime('%A') == today_name)
+            return count == target_n
+        return False
+
+    return False
+
 
 def check_monthly_bonus(hid):
     now = datetime.now()
@@ -267,8 +343,7 @@ def check_monthly_bonus(hid):
 
 @app.context_processor
 def inject_globals():
-    return dict(user=get_current_user(), avatar_skins=AVATAR_SKINS,
-                avatar_hairs=AVATAR_HAIRS, avatar_tops=AVATAR_TOPS)
+    return dict(user=get_current_user())
 
 # ── Auth ──────────────────────────────────────────────────────
 @app.route('/')
@@ -312,9 +387,11 @@ def avatar():
     user = get_current_user()
     if request.method == 'POST':
         conn = get_db()
-        conn.execute('UPDATE users SET avatar_skin=?,avatar_hair=?,avatar_hair_long=?,avatar_top=? WHERE id=?',
-            (int(request.form.get('skin',0)), int(request.form.get('hair',0)),
-             int(request.form.get('hair_long',0)), int(request.form.get('top',0)), user['id']))
+        conn.execute('UPDATE users SET avatar_hair_style=?,avatar_hair_color=?,avatar_skin_color=?,avatar_shirt=?,avatar_shirt_dark=?,avatar_pants=?,avatar_outfit=?,avatar_accessory=? WHERE id=?',
+            (request.form.get('hair_style','short'), request.form.get('hair_color','#8B4513'),
+             request.form.get('skin','#FFDBAC'), request.form.get('shirt','#e74c3c'),
+             request.form.get('shirt_dark','#c0392b'), request.form.get('pants','#4a6fa5'),
+             request.form.get('outfit','tshirt'), request.form.get('accessory','none'), user['id']))
         conn.commit(); conn.close()
         flash('Avatar updated! ✨','success')
         return redirect(url_for('dashboard'))
@@ -397,16 +474,79 @@ def tasks():
     view = request.args.get('view','week')
     conn = get_db()
     members = get_household_members(user['household_id'])
-    planned = {}
-    for day in DAYS:
-        planned[day] = conn.execute('''SELECT * FROM tasks WHERE household_id=? AND task_type="planned"
-            AND day_of_week=? AND status="pending" ORDER BY title''',(user['household_id'],day)).fetchall()
+    today = date.today()
+
+    # Fetch all planned tasks then distribute by frequency into day columns
+    all_planned_tasks = conn.execute(
+        '''SELECT * FROM tasks WHERE household_id=? AND task_type="planned"
+        AND status="pending" ORDER BY title''', (user['household_id'],)).fetchall()
+
+    planned = {day: [] for day in DAYS}
+    for task in all_planned_tasks:
+        dow  = task['day_of_week'] or ''
+        freq = task['frequency'] or 'once'
+
+        if freq == 'daily':
+            for day in DAYS:
+                planned[day].append(task)
+
+        elif freq == 'weekly':
+            # dow is comma-separated days e.g. "Monday,Wednesday,Friday"
+            for day in [d.strip() for d in dow.split(',') if d.strip() in DAYS]:
+                planned[day].append(task)
+
+        elif freq == 'biweekly':
+            if dow in DAYS:
+                planned[dow].append(task)
+
+        elif freq == 'monthly':
+            # Show in the week that contains this month's occurrence
+            # Work out which day(s) it falls on and put it there
+            if dow and ':' in dow:
+                # e.g. "first:Monday"
+                parts = dow.split(':')
+                weekday_name = parts[1] if len(parts) > 1 else ''
+                if weekday_name in DAYS:
+                    occurrence_map = {'first':1,'second':2,'third':3,'fourth':4}
+                    n = occurrence_map.get(parts[0], 1)
+                    # Find the nth weekday of this month
+                    count = 0
+                    for d in range(1, 32):
+                        try:
+                            candidate = today.replace(day=d)
+                        except:
+                            break
+                        if candidate.strftime('%A') == weekday_name:
+                            count += 1
+                            if count == n:
+                                week_start = today - timedelta(days=today.weekday())
+                                week_end   = week_start + timedelta(days=6)
+                                if week_start <= candidate <= week_end:
+                                    planned[weekday_name].append(task)
+                                break
+            elif dow and dow.isdigit():
+                # Specific day-of-month e.g. "15" — show in the week containing that date
+                try:
+                    import calendar as cal
+                    max_day = cal.monthrange(today.year, today.month)[1]
+                    target_day = min(int(dow), max_day)
+                    target_date = today.replace(day=target_day)
+                    week_start = today - timedelta(days=today.weekday())
+                    week_end   = week_start + timedelta(days=6)
+                    if week_start <= target_date <= week_end:
+                        planned[target_date.strftime('%A')].append(task)
+                except:
+                    pass
+
+        elif freq == 'once':
+            if dow in DAYS:
+                planned[dow].append(task)
+
     spontaneous = conn.execute('''SELECT * FROM tasks WHERE household_id=? AND task_type="spontaneous"
         AND status="pending" ORDER BY created_at DESC''',(user['household_id'],)).fetchall()
     conn.close()
     hidden = get_hidden_suggestions(user)
     visible_suggested = [s for s in SUGGESTED_TASKS if s['id'] not in hidden]
-    today = date.today()
     return render_template('tasks.html', user=user, planned=planned, spontaneous=spontaneous,
         days=DAYS, members=members, suggested=visible_suggested,
         all_suggested_count=len(SUGGESTED_TASKS),
@@ -444,13 +584,14 @@ def add_task():
     base_points = int(request.form.get('points', 10))
     final_points = calculate_points_for_duration(base_points, duration_mins)
     conn = get_db()
+    freq = request.form.get('frequency','once') if task_type=='planned' else 'once'
+    dow  = build_dow(request.form, freq) if task_type=='planned' else None
     conn.execute('''INSERT INTO tasks (household_id,title,icon,description,points,duration_mins,
         task_type,day_of_week,frequency,assigned_to,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
         (user['household_id'], request.form['title'].strip(),
          request.form.get('icon','⭐'), request.form.get('description','').strip(),
-         final_points, duration_mins, task_type,
-         request.form.get('day_of_week') if task_type=='planned' else None,
-         request.form.get('frequency','once'), request.form.get('assigned_to') or None, user['id']))
+         final_points, duration_mins, task_type, dow,
+         freq, request.form.get('assigned_to') or None, user['id']))
     conn.commit(); conn.close()
     flash(f'{request.form.get("icon","⭐")} "{request.form["title"]}" added! (+{final_points} pts)','success')
     return redirect(url_for('tasks'))
@@ -464,12 +605,12 @@ def add_suggested_task():
     base_points = int(request.form.get('points', 10))
     final_points = calculate_points_for_duration(base_points, duration_mins)
     conn = get_db()
+    freq2 = request.form.get('frequency','once') if task_type=='planned' else 'once'
+    dow2  = build_dow(request.form, freq2) if task_type=='planned' else None
     conn.execute('''INSERT INTO tasks (household_id,title,icon,points,duration_mins,task_type,day_of_week,frequency,created_by)
         VALUES (?,?,?,?,?,?,?,?,?)''',
         (user['household_id'], request.form['title'], request.form.get('icon','⭐'),
-         final_points, duration_mins, task_type,
-         request.form.get('day_of_week') if task_type=='planned' else None,
-         request.form.get('frequency','once'), user['id']))
+         final_points, duration_mins, task_type, dow2, freq2, user['id']))
     conn.commit(); conn.close()
     flash(f'{request.form.get("icon","⭐")} "{request.form["title"]}" added! (+{final_points} pts)','success')
     return redirect(url_for('tasks'))
